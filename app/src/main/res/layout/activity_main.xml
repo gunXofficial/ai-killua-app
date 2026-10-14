@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="#0a0a0f">
+
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:background="#0a0a0f"
     android:padding="20dp">
 
     <TextView
@@ -34,7 +38,7 @@
 
     <Button
         android:id="@+id/btnVoice"
-        android:text="Perintah Suara"
+        android:text="Perintah Suara (Tap)"
         android:layout_marginTop="6dp"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"/>
@@ -54,9 +58,23 @@
         android:layout_height="wrap_content"/>
 
     <Button
+        android:id="@+id/btnStartWake"
+        android:text="🎤 Nyalakan Wake Word"
+        android:layout_marginTop="24dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+    <Button
+        android:id="@+id/btnStopWake"
+        android:text="Matikan Wake Word"
+        android:layout_marginTop="6dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+    <Button
         android:id="@+id/btnOpenDashboard"
         android:text="Buka Dashboard Web"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="24dp"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"/>
 
@@ -68,3 +86,4 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"/>
 </LinearLayout>
+</ScrollView>
