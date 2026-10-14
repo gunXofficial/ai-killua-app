@@ -28,7 +28,6 @@ public class WakeWordService extends Service {
     private boolean isListening = false;
     private long lastTrigger = 0;
 
-    // Kata pemicu — bisa ditambah
     private static final String[] WAKE_WORDS = {
         "killua", "hey killua", "halo killua", "hei killua"
     };
@@ -55,7 +54,7 @@ public class WakeWordService extends Service {
             NotificationManager nm = getSystemService(NotificationManager.class);
             if (nm != null) nm.createNotificationChannel(ch);
         }
-        Notification notif = null;
+        Notification notif;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             notif = new Notification.Builder(this, CHANNEL_ID)
                     .setContentTitle("AI Killua")
@@ -126,7 +125,7 @@ public class WakeWordService extends Service {
 
     private void triggerWakeWord(String heard) {
         long now = System.currentTimeMillis();
-        if (now - lastTrigger < 3000) return; // debounce 3 detik
+        if (now - lastTrigger < 3000) return;
         lastTrigger = now;
         Log.d("WakeWord", "Triggered: " + heard);
 
@@ -176,4 +175,4 @@ public class WakeWordService extends Service {
             handler.removeCallbacksAndMessages(null);
         }
     }
-                                  }
+}
