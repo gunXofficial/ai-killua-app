@@ -39,7 +39,6 @@ public class MainActivity extends Activity {
             startActivity(new Intent(Intent.ACTION_VIEW,
                 Uri.parse("http://127.0.0.1:8080"))));
 
-        // Wake word buttons
         findViewById(R.id.btnStartWake).setOnClickListener(v -> startWakeWord());
         findViewById(R.id.btnStopWake).setOnClickListener(v -> {
             stopService(new Intent(this, WakeWordService.class));
