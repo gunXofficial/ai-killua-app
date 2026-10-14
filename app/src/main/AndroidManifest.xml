@@ -4,6 +4,9 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <application
         android:label="AI Killua"
         android:usesCleartextTraffic="true"
@@ -16,5 +19,8 @@
             </intent-filter>
         </activity>
         <service android:name=".OverlayService" android:exported="false"/>
+        <service android:name=".WakeWordService"
+            android:exported="false"
+            android:foregroundServiceType="microphone"/>
     </application>
 </manifest>
