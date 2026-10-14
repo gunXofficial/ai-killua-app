@@ -38,6 +38,13 @@ public class MainActivity extends Activity {
         findViewById(R.id.btnOpenDashboard).setOnClickListener(v ->
             startActivity(new Intent(Intent.ACTION_VIEW,
                 Uri.parse("http://127.0.0.1:8080"))));
+
+        // Wake word buttons
+        findViewById(R.id.btnStartWake).setOnClickListener(v -> startWakeWord());
+        findViewById(R.id.btnStopWake).setOnClickListener(v -> {
+            stopService(new Intent(this, WakeWordService.class));
+            statusText.setText("Wake word OFF");
+        });
     }
 
     private void startOverlay() {
@@ -50,6 +57,16 @@ public class MainActivity extends Activity {
         }
         startService(new Intent(this, OverlayService.class));
         statusText.setText("Killua ON");
+    }
+
+    private void startWakeWord() {
+        try {
+            startForegroundService(new Intent(this, WakeWordService.class));
+            statusText.setText("Mendengar 'Hey Killua'...");
+            Toast.makeText(this, "Ucapkan 'Hey Killua'", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            statusText.setText("Error: " + e.getMessage());
+        }
     }
 
     private void runTask() {
@@ -104,4 +121,4 @@ public class MainActivity extends Activity {
             }
         }
     }
-                  }
+}
