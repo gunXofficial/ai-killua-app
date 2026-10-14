@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#0a0a0f"
+    android:padding="20dp">
+
+    <TextView
+        android:text="AI KILLUA"
+        android:textColor="#ffffff"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="20dp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"/>
+
+    <EditText
+        android:id="@+id/inputTask"
+        android:hint="Tulis perintah..."
+        android:textColor="#ffffff"
+        android:textColorHint="#888888"
+        android:background="#1a1a2a"
+        android:padding="14dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+    <Button
+        android:id="@+id/btnRunTask"
+        android:text="Jalankan"
+        android:layout_marginTop="10dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+    <Button
+        android:id="@+id/btnVoice"
+        android:text="Perintah Suara"
+        android:layout_marginTop="6dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+    <Button
+        android:id="@+id/btnStartOverlay"
+        android:text="Aktifkan Killua"
+        android:layout_marginTop="24dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+    <Button
+        android:id="@+id/btnStopOverlay"
+        android:text="Matikan Killua"
+        android:layout_marginTop="6dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+    <Button
+        android:id="@+id/btnOpenDashboard"
+        android:text="Buka Dashboard Web"
+        android:layout_marginTop="16dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+    <TextView
+        android:id="@+id/statusText"
+        android:text="Status: siap"
+        android:textColor="#88aaff"
+        android:layout_marginTop="20dp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"/>
+</LinearLayout>
