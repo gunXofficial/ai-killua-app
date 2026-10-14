@@ -64,7 +64,6 @@ public class OverlayService extends Service {
         bubbleParams.y = 300;
 
         bubble = new ImageView(this);
-        bubble.setImageResource(android.R.drawable.ic_menu_mic);
         bubble.setBackgroundColor(0xCC1a0d3a);
         bubble.setPadding(30, 30, 30, 30);
 
