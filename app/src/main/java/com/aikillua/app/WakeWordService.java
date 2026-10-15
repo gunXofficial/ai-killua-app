@@ -26,7 +26,7 @@ public class WakeWordService extends Service {
     private Intent recognizerIntent;
     private Handler handler;
     private boolean isListening = false;
-    private boolean isCapturingCommand = false;  // mode: dengar perintah
+    private boolean isCapturingCommand = false;
     private long lastTrigger = 0;
 
     private static final String[] WAKE_WORDS = {
@@ -83,6 +83,14 @@ public class WakeWordService extends Service {
         recognizerIntent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE,
                 getPackageName());
 
+        // Perpanjang durasi dengar — biar tidak cepat stop
+        recognizerIntent.putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L);
+        recognizerIntent.putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L);
+        recognizerIntent.putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1000L);
+
         recognizer.setRecognitionListener(new RecognitionListener() {
             @Override public void onReadyForSpeech(Bundle params) {}
             @Override public void onBeginningOfSpeech() {}
@@ -93,17 +101,16 @@ public class WakeWordService extends Service {
 
             @Override
             public void onError(int error) {
-                // Kalau sedang capture perintah tapi error → balik ke wake mode
                 if (isCapturingCommand) {
                     isCapturingCommand = false;
                 }
-                restartListening(400);
+                restartListening(150);
             }
 
             @Override
             public void onResults(Bundle results) {
                 processResults(results, true);
-                restartListening(300);
+                restartListening(100);
             }
 
             @Override
@@ -122,27 +129,21 @@ public class WakeWordService extends Service {
             String lower = text.toLowerCase(Locale.ROOT);
 
             if (isCapturingCommand) {
-                // Mode: dengar perintah
                 if (isFinal) {
-                    // Kirim perintah ke server
                     sendToServer("/start", text);
                     isCapturingCommand = false;
                 }
                 return;
             }
 
-            // Mode: cari wake word
             for (String wake : WAKE_WORDS) {
                 if (lower.contains(wake)) {
                     long now = System.currentTimeMillis();
                     if (now - lastTrigger < 2000) return;
                     lastTrigger = now;
 
-                    // Masuk mode capture perintah
                     isCapturingCommand = true;
                     Log.d("WakeWord", "Wake detected: " + text);
-
-                    // Bunyi konfirmasi singkat (opsional)
                     sendToServer("/wake", text);
                     return;
                 }
@@ -200,4 +201,4 @@ public class WakeWordService extends Service {
             handler.removeCallbacksAndMessages(null);
         }
     }
-}
+                    }
