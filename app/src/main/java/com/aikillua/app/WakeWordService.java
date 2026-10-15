@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ServiceInfo;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
@@ -22,7 +23,7 @@ public class WakeWordService extends Service {
     private static final int SAMPLE_RATE = 16000;
     private static final int CHUNK_SECONDS = 4;
     private static final int CHUNK_SIZE = SAMPLE_RATE * CHUNK_SECONDS * 2;
-    private static final double RMS_THRESHOLD = 600.0;  // filter suara pelan
+    private static final double RMS_THRESHOLD = 600.0;
 
     private AudioRecord audioRecord;
     private Thread recordThread;
@@ -34,11 +35,12 @@ public class WakeWordService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        startForeground();
+        startForegroundSafely();
         startRecording();
     }
 
-    private void startForeground() {
+    private void startForegroundSafely() {
+        // Buat channel notifikasi
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel ch = new NotificationChannel(
                     CHANNEL_ID, "AI Killua",
@@ -46,6 +48,8 @@ public class WakeWordService extends Service {
             NotificationManager nm = getSystemService(NotificationManager.class);
             if (nm != null) nm.createNotificationChannel(ch);
         }
+
+        // Buat notifikasi
         Notification notif;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             notif = new Notification.Builder(this, CHANNEL_ID)
@@ -61,7 +65,22 @@ public class WakeWordService extends Service {
                     .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                     .build();
         }
-        startForeground(1, notif);
+
+        // Android 14+ butuh type
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(1, notif,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(1, notif,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+            } else {
+                startForeground(1, notif);
+            }
+            Log.d("Killua", "Foreground service started");
+        } catch (Exception e) {
+            Log.e("Killua", "startForeground err", e);
+        }
     }
 
     private void startRecording() {
@@ -110,7 +129,6 @@ public class WakeWordService extends Service {
                     offset += read;
 
                     if (offset >= CHUNK_SIZE) {
-                        // Cek apakah ada suara (bukan cuma noise)
                         if (hasVoice(chunk, offset)) {
                             final byte[] toSend = chunk.clone();
                             new Thread(() -> sendChunk(toSend)).start();
