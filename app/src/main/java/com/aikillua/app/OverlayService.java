@@ -4,20 +4,25 @@ import android.app.Service;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
-import android.widget.ImageView;
 
 public class OverlayService extends Service {
     private WindowManager wm;
     private WebView webView;
-    private ImageView bubble;
-    private WindowManager.LayoutParams charParams, bubbleParams;
+    private WindowManager.LayoutParams charParams;
+    private Handler handler;
+    private long lastTap = 0;
+    private long downTime = 0;
+    private boolean dragArmed = false; // drag aktif setelah long-press
+    private Runnable longPressRunnable;
 
     @Override
     public IBinder onBind(Intent i) { return null; }
@@ -26,26 +31,24 @@ public class OverlayService extends Service {
     public void onCreate() {
         super.onCreate();
         wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+        handler = new Handler(Looper.getMainLooper());
         addCharacter();
-        addBubble();
+        autoStartWakeWord();
     }
 
     private void addCharacter() {
-        // Karakter: NOT_TOUCHABLE → tap tembus ke app belakang
         charParams = new WindowManager.LayoutParams(
-                280, 400,
+                240, 340,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
         charParams.gravity = Gravity.BOTTOM | Gravity.END;
-        charParams.x = 0;
-        charParams.y = 0;
+        charParams.x = 20;
+        charParams.y = 20;
 
         webView = new WebView(this);
-        // Transparan penuh
         webView.setBackgroundColor(Color.TRANSPARENT);
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         WebSettings s = webView.getSettings();
@@ -53,86 +56,110 @@ public class OverlayService extends Service {
         s.setDomStorageEnabled(true);
         webView.loadUrl("http://127.0.0.1:8080/karakter");
 
-        wm.addView(webView, charParams);
-    }
-
-    private void addBubble() {
-        bubbleParams = new WindowManager.LayoutParams(
-                120, 120,
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-                PixelFormat.TRANSLUCENT);
-        bubbleParams.gravity = Gravity.TOP | Gravity.START;
-        bubbleParams.x = 20;
-        bubbleParams.y = 400;
-
-        bubble = new ImageView(this);
-        bubble.setImageResource(android.R.drawable.ic_btn_speak_now);
-        bubble.setBackgroundColor(0xCC1a0d3a);
-        bubble.setPadding(28, 28, 28, 28);
-
-        bubble.setOnTouchListener(new View.OnTouchListener() {
+        webView.setOnTouchListener(new View.OnTouchListener() {
             int ix, iy;
             float tx, ty;
-            boolean moved;
-            long downTime;
 
             @Override
             public boolean onTouch(View v, MotionEvent e) {
                 switch (e.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        ix = bubbleParams.x;
-                        iy = bubbleParams.y;
+                    case MotionEvent.ACTION_DOWN: {
+                        ix = charParams.x;
+                        iy = charParams.y;
                         tx = e.getRawX();
                         ty = e.getRawY();
-                        moved = false;
                         downTime = System.currentTimeMillis();
-                        return true;
+                        dragArmed = false;
 
-                    case MotionEvent.ACTION_MOVE:
-                        int dx = (int)(e.getRawX() - tx);
-                        int dy = (int)(e.getRawY() - ty);
-                        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) moved = true;
-                        bubbleParams.x = ix + dx;
-                        bubbleParams.y = iy + dy;
-                        wm.updateViewLayout(bubble, bubbleParams);
+                        // Set timer: kalau ditahan 500ms → aktifkan drag
+                        final View vv = v;
+                        longPressRunnable = new Runnable() {
+                            @Override
+                            public void run() {
+                                dragArmed = true;
+                                // Optional: feedback visual
+                                webView.setAlpha(0.7f);
+                            }
+                        };
+                        handler.postDelayed(longPressRunnable, 500);
                         return true;
+                    }
+
+                    case MotionEvent.ACTION_MOVE: {
+                        float dx = e.getRawX() - tx;
+                        float dy = e.getRawY() - ty;
+                        float dist = (float) Math.sqrt(dx*dx + dy*dy);
+
+                        // Kalau user gerak sebelum 500ms → batal long press
+                        if (!dragArmed && dist > 15) {
+                            handler.removeCallbacks(longPressRunnable);
+                            return true;
+                        }
+
+                        // Kalau drag sudah aktif → geser
+                        if (dragArmed) {
+                            charParams.x = Math.max(-100, ix - (int)dx);
+                            charParams.y = Math.max(-100, iy - (int)dy);
+                            wm.updateViewLayout(webView, charParams);
+                        }
+                        return true;
+                    }
 
                     case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL: {
+                        handler.removeCallbacks(longPressRunnable);
+                        webView.setAlpha(1.0f);
+
                         long dur = System.currentTimeMillis() - downTime;
-                        if (!moved) {
-                            if (dur > 600) {
-                                // Long press → toggle karakter
-                                toggleCharacter();
-                            } else {
-                                // Tap → buka app
+                        float dx = e.getRawX() - tx;
+                        float dy = e.getRawY() - ty;
+                        float dist = (float) Math.sqrt(dx*dx + dy*dy);
+
+                        if (dragArmed) {
+                            // Selesai drag
+                            dragArmed = false;
+                            return true;
+                        }
+
+                        // Bukan drag. Cek tap atau double-tap
+                        if (dist < 20 && dur < 500) {
+                            long now = System.currentTimeMillis();
+                            if (now - lastTap < 450) {
+                                // Double tap → buka panel
                                 Intent i = new Intent(OverlayService.this, MainActivity.class);
                                 i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                                 startActivity(i);
+                                lastTap = 0;
+                            } else {
+                                lastTap = now;
                             }
                         }
                         return true;
+                    }
                 }
                 return false;
             }
         });
 
-        wm.addView(bubble, bubbleParams);
+        wm.addView(webView, charParams);
     }
 
-    private void toggleCharacter() {
-        if (webView.getVisibility() == View.VISIBLE) {
-            webView.setVisibility(View.GONE);
-        } else {
-            webView.setVisibility(View.VISIBLE);
-        }
+    private void autoStartWakeWord() {
+        handler.postDelayed(() -> {
+            try {
+                Intent i = new Intent(OverlayService.this, WakeWordService.class);
+                startForegroundService(i);
+            } catch (Exception e) {}
+        }, 2000);
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
+        if (handler != null) handler.removeCallbacksAndMessages(null);
         if (webView != null) wm.removeView(webView);
-        if (bubble != null) wm.removeView(bubble);
+        try {
+            stopService(new Intent(this, WakeWordService.class));
+        } catch (Exception e) {}
     }
 }
