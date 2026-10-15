@@ -9,6 +9,8 @@
 
     <application
         android:label="AI Killua"
+        android:icon="@android:drawable/sym_def_app_icon"
+        
         android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <activity android:name=".MainActivity"
