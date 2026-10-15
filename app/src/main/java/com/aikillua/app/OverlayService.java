@@ -38,15 +38,15 @@ public class OverlayService extends Service {
 
     private void addCharacter() {
         charParams = new WindowManager.LayoutParams(
-                240, 340,
+                300, 500,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
         charParams.gravity = Gravity.BOTTOM | Gravity.END;
-        charParams.x = 20;
-        charParams.y = 20;
+        charParams.x = 0;
+        charParams.y = 0;
 
         webView = new WebView(this);
         webView.setBackgroundColor(Color.TRANSPARENT);
