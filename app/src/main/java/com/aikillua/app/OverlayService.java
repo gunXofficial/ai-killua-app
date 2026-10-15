@@ -21,7 +21,7 @@ public class OverlayService extends Service {
     private Handler handler;
     private long lastTap = 0;
     private long downTime = 0;
-    private boolean dragArmed = false; // drag aktif setelah long-press
+    private boolean dragArmed = false;
     private Runnable longPressRunnable;
 
     @Override
@@ -71,13 +71,10 @@ public class OverlayService extends Service {
                         downTime = System.currentTimeMillis();
                         dragArmed = false;
 
-                        // Set timer: kalau ditahan 500ms → aktifkan drag
-                        final View vv = v;
                         longPressRunnable = new Runnable() {
                             @Override
                             public void run() {
                                 dragArmed = true;
-                                // Optional: feedback visual
                                 webView.setAlpha(0.7f);
                             }
                         };
@@ -90,13 +87,11 @@ public class OverlayService extends Service {
                         float dy = e.getRawY() - ty;
                         float dist = (float) Math.sqrt(dx*dx + dy*dy);
 
-                        // Kalau user gerak sebelum 500ms → batal long press
                         if (!dragArmed && dist > 15) {
                             handler.removeCallbacks(longPressRunnable);
                             return true;
                         }
 
-                        // Kalau drag sudah aktif → geser
                         if (dragArmed) {
                             charParams.x = Math.max(-100, ix - (int)dx);
                             charParams.y = Math.max(-100, iy - (int)dy);
@@ -116,16 +111,13 @@ public class OverlayService extends Service {
                         float dist = (float) Math.sqrt(dx*dx + dy*dy);
 
                         if (dragArmed) {
-                            // Selesai drag
                             dragArmed = false;
                             return true;
                         }
 
-                        // Bukan drag. Cek tap atau double-tap
                         if (dist < 20 && dur < 500) {
                             long now = System.currentTimeMillis();
                             if (now - lastTap < 450) {
-                                // Double tap → buka panel
                                 Intent i = new Intent(OverlayService.this, MainActivity.class);
                                 i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                                 startActivity(i);
