@@ -25,8 +25,8 @@ public class WakeWordService extends Service {
     private static final int SAMPLE_RATE = 16000;
     private static final int CHUNK_SECONDS = 3;
     private static final int CHUNK_SIZE = SAMPLE_RATE * CHUNK_SECONDS * 2;
-    private static final double RMS_MIN = 80.0;    // threshold lebih rendah
-    private static final double RMS_TARGET = 3000.0; // target volume setelah boost
+    private static final double RMS_MIN = 200.0;
+    private static final double RMS_TARGET = 3000.0;
 
     private AudioRecord audioRecord;
     private AutomaticGainControl agc;
@@ -118,30 +118,19 @@ public class WakeWordService extends Service {
                 audioRecord.startRecording();
                 Log.d("Killua", "Recording started");
 
-                // Aktifkan AGC & Noise Suppressor kalau tersedia
                 try {
                     if (AutomaticGainControl.isAvailable()) {
                         agc = AutomaticGainControl.create(audioRecord.getAudioSessionId());
-                        if (agc != null) {
-                            agc.setEnabled(true);
-                            Log.d("Killua", "AGC enabled");
-                        }
+                        if (agc != null) agc.setEnabled(true);
                     }
-                } catch (Exception e) {
-                    Log.w("Killua", "AGC failed: " + e.getMessage());
-                }
+                } catch (Exception e) {}
 
                 try {
                     if (NoiseSuppressor.isAvailable()) {
                         ns = NoiseSuppressor.create(audioRecord.getAudioSessionId());
-                        if (ns != null) {
-                            ns.setEnabled(true);
-                            Log.d("Killua", "NS enabled");
-                        }
+                        if (ns != null) ns.setEnabled(true);
                     }
-                } catch (Exception e) {
-                    Log.w("Killua", "NS failed: " + e.getMessage());
-                }
+                } catch (Exception e) {}
 
                 byte[] chunk = new byte[CHUNK_SIZE];
                 int offset = 0;
@@ -165,9 +154,8 @@ public class WakeWordService extends Service {
                         }
 
                         if (rms > RMS_MIN) {
-                            // Normalisasi: boost volume ke target
                             byte[] boosted = normalizeAudio(chunk, offset, rms);
-                            Log.d("Killua", "SEND boosted RMS=" + (int)rms);
+                            Log.d("Killua", "SEND RMS=" + (int)rms);
                             new Thread(() -> sendChunk(boosted)).start();
                         } else {
                             Log.d("Killua", "Silence RMS=" + (int)rms);
@@ -199,15 +187,9 @@ public class WakeWordService extends Service {
         return Math.sqrt(sum / (double) count);
     }
 
-    /**
-     * Normalisasi amplitudo PCM: hitung gain yang diperlukan,
-     * lalu kalikan setiap sample dengan gain tersebut.
-     * Clamp ke ±32767 untuk hindari overflow.
-     */
     private byte[] normalizeAudio(byte[] pcm, int len, double rms) {
         if (rms < 1) return pcm;
         double gain = RMS_TARGET / rms;
-        // Batasi gain maksimal 15x biar tidak terlalu berisik
         if (gain > 15.0) gain = 15.0;
         if (gain < 1.0) gain = 1.0;
 
