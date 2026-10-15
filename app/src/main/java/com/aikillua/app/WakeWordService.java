@@ -10,6 +10,8 @@ import android.content.pm.ServiceInfo;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
+import android.media.audiofx.AutomaticGainControl;
+import android.media.audiofx.NoiseSuppressor;
 import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
@@ -23,9 +25,12 @@ public class WakeWordService extends Service {
     private static final int SAMPLE_RATE = 16000;
     private static final int CHUNK_SECONDS = 3;
     private static final int CHUNK_SIZE = SAMPLE_RATE * CHUNK_SECONDS * 2;
-    private static final double RMS_THRESHOLD = 200.0;  // DITURUNKAN dari 600
+    private static final double RMS_MIN = 80.0;    // threshold lebih rendah
+    private static final double RMS_TARGET = 3000.0; // target volume setelah boost
 
     private AudioRecord audioRecord;
+    private AutomaticGainControl agc;
+    private NoiseSuppressor ns;
     private Thread recordThread;
     private volatile boolean isRunning = false;
 
@@ -74,7 +79,6 @@ public class WakeWordService extends Service {
             } else {
                 startForeground(1, notif);
             }
-            Log.d("Killua", "Foreground service started");
         } catch (Exception e) {
             Log.e("Killua", "startForeground err", e);
         }
@@ -114,6 +118,31 @@ public class WakeWordService extends Service {
                 audioRecord.startRecording();
                 Log.d("Killua", "Recording started");
 
+                // Aktifkan AGC & Noise Suppressor kalau tersedia
+                try {
+                    if (AutomaticGainControl.isAvailable()) {
+                        agc = AutomaticGainControl.create(audioRecord.getAudioSessionId());
+                        if (agc != null) {
+                            agc.setEnabled(true);
+                            Log.d("Killua", "AGC enabled");
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.w("Killua", "AGC failed: " + e.getMessage());
+                }
+
+                try {
+                    if (NoiseSuppressor.isAvailable()) {
+                        ns = NoiseSuppressor.create(audioRecord.getAudioSessionId());
+                        if (ns != null) {
+                            ns.setEnabled(true);
+                            Log.d("Killua", "NS enabled");
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.w("Killua", "NS failed: " + e.getMessage());
+                }
+
                 byte[] chunk = new byte[CHUNK_SIZE];
                 int offset = 0;
                 long lastLog = 0;
@@ -130,16 +159,16 @@ public class WakeWordService extends Service {
                         double rms = calcRms(chunk, offset);
                         long now = System.currentTimeMillis();
 
-                        // Log RMS tiap 3 detik biar tahu level volume
                         if (now - lastLog > 3000) {
                             Log.d("Killua", "RMS: " + (int)rms);
                             lastLog = now;
                         }
 
-                        if (rms > RMS_THRESHOLD) {
-                            Log.d("Killua", "SEND chunk RMS=" + (int)rms);
-                            final byte[] toSend = chunk.clone();
-                            new Thread(() -> sendChunk(toSend)).start();
+                        if (rms > RMS_MIN) {
+                            // Normalisasi: boost volume ke target
+                            byte[] boosted = normalizeAudio(chunk, offset, rms);
+                            Log.d("Killua", "SEND boosted RMS=" + (int)rms);
+                            new Thread(() -> sendChunk(boosted)).start();
                         } else {
                             Log.d("Killua", "Silence RMS=" + (int)rms);
                         }
@@ -148,6 +177,8 @@ public class WakeWordService extends Service {
                     }
                 }
 
+                if (agc != null) agc.release();
+                if (ns != null) ns.release();
                 audioRecord.stop();
                 audioRecord.release();
             } catch (Exception e) {
@@ -168,9 +199,32 @@ public class WakeWordService extends Service {
         return Math.sqrt(sum / (double) count);
     }
 
+    /**
+     * Normalisasi amplitudo PCM: hitung gain yang diperlukan,
+     * lalu kalikan setiap sample dengan gain tersebut.
+     * Clamp ke ±32767 untuk hindari overflow.
+     */
+    private byte[] normalizeAudio(byte[] pcm, int len, double rms) {
+        if (rms < 1) return pcm;
+        double gain = RMS_TARGET / rms;
+        // Batasi gain maksimal 15x biar tidak terlalu berisik
+        if (gain > 15.0) gain = 15.0;
+        if (gain < 1.0) gain = 1.0;
+
+        byte[] out = new byte[len];
+        for (int i = 0; i < len - 1; i += 2) {
+            short s = (short) ((pcm[i+1] << 8) | (pcm[i] & 0xFF));
+            int amplified = (int) (s * gain);
+            if (amplified > 32767) amplified = 32767;
+            if (amplified < -32768) amplified = -32768;
+            out[i] = (byte) (amplified & 0xFF);
+            out[i+1] = (byte) ((amplified >> 8) & 0xFF);
+        }
+        return out;
+    }
+
     private void sendChunk(byte[] pcmData) {
         try {
-            Log.d("Killua", "POST /transcribe " + pcmData.length + " bytes");
             URL url = new URL("http://127.0.0.1:8080/transcribe");
             HttpURLConnection c = (HttpURLConnection) url.openConnection();
             c.setRequestMethod("POST");
@@ -192,6 +246,8 @@ public class WakeWordService extends Service {
     public void onDestroy() {
         super.onDestroy();
         isRunning = false;
+        if (agc != null) agc.release();
+        if (ns != null) ns.release();
         if (audioRecord != null) {
             try {
                 audioRecord.stop();
