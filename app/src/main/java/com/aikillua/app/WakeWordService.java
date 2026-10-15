@@ -23,8 +23,9 @@ import java.net.URL;
 public class WakeWordService extends Service {
     private static final String CHANNEL_ID = "killua_wake";
     private static final int SAMPLE_RATE = 16000;
-    private static final int CHUNK_SECONDS = 2;
+    private static final int CHUNK_SECONDS = 4;               // ← 4 detik (lebih akurat)
     private static final int CHUNK_SIZE = SAMPLE_RATE * CHUNK_SECONDS * 2;
+    private static final double RMS_MIN = 100.0;              // ← filter lembut
 
     private AudioRecord audioRecord;
     private AutomaticGainControl agc;
@@ -109,7 +110,7 @@ public class WakeWordService extends Service {
                         bufferSize);
 
                 if (audioRecord.getState() != AudioRecord.STATE_INITIALIZED) {
-                    Log.w("Killua", "VOICE_RECOGNITION failed, trying MIC");
+                    Log.w("Killua", "Fallback ke MIC");
                     if (audioRecord != null) audioRecord.release();
                     audioRecord = new AudioRecord(
                             MediaRecorder.AudioSource.MIC,
@@ -154,11 +155,14 @@ public class WakeWordService extends Service {
 
                     if (offset >= CHUNK_SIZE) {
                         double rms = calcRms(chunk, offset);
-                        final byte[] toSend = chunk.clone();
-                        final int rmsValue = (int) rms;
-                        Log.d("Killua", "SEND RMS=" + rmsValue);
-                        new Thread(() -> sendChunk(toSend, rmsValue)).start();
-
+                        if (rms > RMS_MIN) {
+                            final byte[] toSend = chunk.clone();
+                            final int rmsValue = (int) rms;
+                            Log.d("Killua", "SEND RMS=" + rmsValue);
+                            new Thread(() -> sendChunk(toSend, rmsValue)).start();
+                        } else {
+                            Log.d("Killua", "Silence RMS=" + (int)rms);
+                        }
                         offset = 0;
                         chunk = new byte[CHUNK_SIZE];
                     }
@@ -195,7 +199,7 @@ public class WakeWordService extends Service {
             c.setRequestProperty("X-Audio-RMS", String.valueOf(rms));
             c.setDoOutput(true);
             c.setConnectTimeout(5000);
-            c.setReadTimeout(30000);
+            c.setReadTimeout(45000);
             OutputStream os = c.getOutputStream();
             os.write(pcmData);
             os.close();
@@ -220,4 +224,4 @@ public class WakeWordService extends Service {
         }
         if (recordThread != null) recordThread.interrupt();
     }
-                            }
+        }
