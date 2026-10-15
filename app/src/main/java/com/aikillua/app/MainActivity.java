@@ -1,4 +1,4 @@
-package com.aikillua.app;
+  package com.aikillua.app;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -29,10 +29,7 @@ public class MainActivity extends Activity {
         statusText = findViewById(R.id.statusText);
 
         findViewById(R.id.btnStartOverlay).setOnClickListener(v -> startOverlay());
-        findViewById(R.id.btnStopOverlay).setOnClickListener(v -> {
-            stopService(new Intent(this, OverlayService.class));
-            statusText.setText("Killua OFF");
-        });
+        findViewById(R.id.btnStopOverlay).setOnClickListener(v -> stopEverything());
         findViewById(R.id.btnRunTask).setOnClickListener(v -> runTask());
         findViewById(R.id.btnVoice).setOnClickListener(v -> startVoice());
         findViewById(R.id.btnOpenDashboard).setOnClickListener(v ->
@@ -55,14 +52,19 @@ public class MainActivity extends Activity {
             return;
         }
         startService(new Intent(this, OverlayService.class));
-        statusText.setText("Killua ON");
+        statusText.setText("Killua + Wake Word aktif");
+    }
+
+    private void stopEverything() {
+        stopService(new Intent(this, OverlayService.class));
+        stopService(new Intent(this, WakeWordService.class));
+        statusText.setText("Semua mati");
     }
 
     private void startWakeWord() {
         try {
             startForegroundService(new Intent(this, WakeWordService.class));
             statusText.setText("Mendengar 'Hey Killua'...");
-            Toast.makeText(this, "Ucapkan 'Hey Killua'", Toast.LENGTH_LONG).show();
         } catch (Exception e) {
             statusText.setText("Error: " + e.getMessage());
         }
@@ -120,4 +122,4 @@ public class MainActivity extends Activity {
             }
         }
     }
-}
+} 
