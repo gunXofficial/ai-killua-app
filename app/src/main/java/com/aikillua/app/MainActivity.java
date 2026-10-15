@@ -2,15 +2,19 @@ package com.aikillua.app;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.provider.Settings;
 import android.speech.RecognizerIntent;
+import android.util.Base64;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -19,6 +23,7 @@ import java.util.ArrayList;
 public class MainActivity extends Activity {
     private static final int REQ_VOICE = 100;
     private static final int REQ_PERMS = 99;
+    private static final int REQ_PICK_IMAGE = 200;
     private EditText inputTask;
     private TextView statusText;
 
@@ -29,7 +34,6 @@ public class MainActivity extends Activity {
         inputTask = findViewById(R.id.inputTask);
         statusText = findViewById(R.id.statusText);
 
-        // Minta izin mic & notifikasi saat pertama buka
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
                 && checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
                     != android.content.pm.PackageManager.PERMISSION_GRANTED) {
@@ -52,6 +56,8 @@ public class MainActivity extends Activity {
             stopService(new Intent(this, WakeWordService.class));
             statusText.setText("Wake word OFF");
         });
+
+        findViewById(R.id.btnPickChar).setOnClickListener(v -> pickCharacter());
     }
 
     private void startOverlay() {
@@ -75,10 +81,62 @@ public class MainActivity extends Activity {
     private void startWakeWord() {
         try {
             startForegroundService(new Intent(this, WakeWordService.class));
-            statusText.setText("Mendengar 'Hey Killua'...");
+            statusText.setText("Mendengar 'Killua'...");
         } catch (Exception e) {
             statusText.setText("Error: " + e.getMessage());
         }
+    }
+
+    private void pickCharacter() {
+        Intent i = new Intent(Intent.ACTION_PICK,
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+        i.setType("image/*");
+        startActivityForResult(i, REQ_PICK_IMAGE);
+    }
+
+    private String getPathFromUri(Uri uri) {
+        try {
+            String[] proj = {MediaStore.Images.Media.DATA};
+            Cursor c = getContentResolver().query(uri, proj, null, null, null);
+            if (c != null && c.moveToFirst()) {
+                int idx = c.getColumnIndex(proj[0]);
+                String p = c.getString(idx);
+                c.close();
+                return p;
+            }
+        } catch (Exception e) {}
+        return null;
+    }
+
+    private void uploadCharacter(final Uri uri) {
+        statusText.setText("Upload karakter...");
+        new Thread(() -> {
+            try {
+                InputStream in = getContentResolver().openInputStream(uri);
+                java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+                in.close();
+                byte[] data = bos.toByteArray();
+                String b64 = Base64.encodeToString(data, Base64.NO_WRAP);
+
+                URL url = new URL("http://127.0.0.1:8080/upload_character");
+                HttpURLConnection c = (HttpURLConnection) url.openConnection();
+                c.setRequestMethod("POST");
+                c.setRequestProperty("Content-Type", "application/json");
+                c.setDoOutput(true);
+                c.setConnectTimeout(10000);
+                OutputStream os = c.getOutputStream();
+                os.write(("{\"image\":\"" + b64 + "\"}").getBytes("UTF-8"));
+                os.close();
+                final int code = c.getResponseCode();
+                runOnUiThread(() -> statusText.setText("Upload OK " + code));
+            } catch (Exception e) {
+                final String m = e.getMessage();
+                runOnUiThread(() -> statusText.setText("Upload error: " + m));
+            }
+        }).start();
     }
 
     private void runTask() {
@@ -122,25 +180,6 @@ public class MainActivity extends Activity {
     }
 
     @Override
-    public void onRequestPermissionsResult(int req, String[] perms, int[] res) {
-        super.onRequestPermissionsResult(req, perms, res);
-        if (req == REQ_PERMS) {
-            boolean granted = true;
-            for (int r : res) {
-                if (r != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                    granted = false;
-                    break;
-                }
-            }
-            if (granted) {
-                statusText.setText("Izin OK. Siap pakai.");
-            } else {
-                statusText.setText("Izin ditolak. Cek Setelan.");
-            }
-        }
-    }
-
-    @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
         if (req == REQ_VOICE && res == RESULT_OK && data != null) {
@@ -151,5 +190,24 @@ public class MainActivity extends Activity {
                 sendTask(r.get(0));
             }
         }
+        if (req == REQ_PICK_IMAGE && res == RESULT_OK && data != null) {
+            Uri uri = data.getData();
+            if (uri != null) uploadCharacter(uri);
+        }
     }
-}
+
+    @Override
+    public void onRequestPermissionsResult(int req, String[] perms, int[] res) {
+        super.onRequestPermissionsResult(req, perms, res);
+        if (req == REQ_PERMS) {
+            boolean granted = true;
+            for (int r : res) {
+                if (r != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    granted = false;
+                    break;
+                }
+            }
+            statusText.setText(granted ? "Izin OK" : "Izin ditolak");
+        }
+    }
+                              }
