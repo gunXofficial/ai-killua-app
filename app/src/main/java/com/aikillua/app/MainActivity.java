@@ -1,4 +1,4 @@
-  package com.aikillua.app;
+package com.aikillua.app;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -18,6 +18,7 @@ import java.util.ArrayList;
 
 public class MainActivity extends Activity {
     private static final int REQ_VOICE = 100;
+    private static final int REQ_PERMS = 99;
     private EditText inputTask;
     private TextView statusText;
 
@@ -27,6 +28,16 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
         inputTask = findViewById(R.id.inputTask);
         statusText = findViewById(R.id.statusText);
+
+        // Minta izin mic & notifikasi saat pertama buka
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                && checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
+                    != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{
+                    android.Manifest.permission.RECORD_AUDIO,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+            }, REQ_PERMS);
+        }
 
         findViewById(R.id.btnStartOverlay).setOnClickListener(v -> startOverlay());
         findViewById(R.id.btnStopOverlay).setOnClickListener(v -> stopEverything());
@@ -111,6 +122,25 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    public void onRequestPermissionsResult(int req, String[] perms, int[] res) {
+        super.onRequestPermissionsResult(req, perms, res);
+        if (req == REQ_PERMS) {
+            boolean granted = true;
+            for (int r : res) {
+                if (r != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    granted = false;
+                    break;
+                }
+            }
+            if (granted) {
+                statusText.setText("Izin OK. Siap pakai.");
+            } else {
+                statusText.setText("Izin ditolak. Cek Setelan.");
+            }
+        }
+    }
+
+    @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
         if (req == REQ_VOICE && res == RESULT_OK && data != null) {
@@ -122,4 +152,4 @@ public class MainActivity extends Activity {
             }
         }
     }
-} 
+}
