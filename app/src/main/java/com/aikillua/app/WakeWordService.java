@@ -21,9 +21,9 @@ import java.net.URL;
 public class WakeWordService extends Service {
     private static final String CHANNEL_ID = "killua_wake";
     private static final int SAMPLE_RATE = 16000;
-    private static final int CHUNK_SECONDS = 4;
+    private static final int CHUNK_SECONDS = 3;
     private static final int CHUNK_SIZE = SAMPLE_RATE * CHUNK_SECONDS * 2;
-    private static final double RMS_THRESHOLD = 600.0;
+    private static final double RMS_THRESHOLD = 200.0;  // DITURUNKAN dari 600
 
     private AudioRecord audioRecord;
     private Thread recordThread;
@@ -40,7 +40,6 @@ public class WakeWordService extends Service {
     }
 
     private void startForegroundSafely() {
-        // Buat channel notifikasi
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel ch = new NotificationChannel(
                     CHANNEL_ID, "AI Killua",
@@ -49,7 +48,6 @@ public class WakeWordService extends Service {
             if (nm != null) nm.createNotificationChannel(ch);
         }
 
-        // Buat notifikasi
         Notification notif;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             notif = new Notification.Builder(this, CHANNEL_ID)
@@ -66,7 +64,6 @@ public class WakeWordService extends Service {
                     .build();
         }
 
-        // Android 14+ butuh type
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 startForeground(1, notif,
@@ -119,6 +116,7 @@ public class WakeWordService extends Service {
 
                 byte[] chunk = new byte[CHUNK_SIZE];
                 int offset = 0;
+                long lastLog = 0;
 
                 while (isRunning) {
                     int read = audioRecord.read(chunk, offset, CHUNK_SIZE - offset);
@@ -129,11 +127,21 @@ public class WakeWordService extends Service {
                     offset += read;
 
                     if (offset >= CHUNK_SIZE) {
-                        if (hasVoice(chunk, offset)) {
+                        double rms = calcRms(chunk, offset);
+                        long now = System.currentTimeMillis();
+
+                        // Log RMS tiap 3 detik biar tahu level volume
+                        if (now - lastLog > 3000) {
+                            Log.d("Killua", "RMS: " + (int)rms);
+                            lastLog = now;
+                        }
+
+                        if (rms > RMS_THRESHOLD) {
+                            Log.d("Killua", "SEND chunk RMS=" + (int)rms);
                             final byte[] toSend = chunk.clone();
                             new Thread(() -> sendChunk(toSend)).start();
                         } else {
-                            Log.d("Killua", "Silence, skip");
+                            Log.d("Killua", "Silence RMS=" + (int)rms);
                         }
                         offset = 0;
                         chunk = new byte[CHUNK_SIZE];
@@ -149,20 +157,20 @@ public class WakeWordService extends Service {
         recordThread.start();
     }
 
-    private boolean hasVoice(byte[] pcm, int len) {
+    private double calcRms(byte[] pcm, int len) {
         long sum = 0;
         int count = len / 2;
         for (int i = 0; i < len - 1; i += 2) {
             short s = (short) ((pcm[i+1] << 8) | (pcm[i] & 0xFF));
             sum += (long) s * s;
         }
-        if (count == 0) return false;
-        double rms = Math.sqrt(sum / (double) count);
-        return rms > RMS_THRESHOLD;
+        if (count == 0) return 0;
+        return Math.sqrt(sum / (double) count);
     }
 
     private void sendChunk(byte[] pcmData) {
         try {
+            Log.d("Killua", "POST /transcribe " + pcmData.length + " bytes");
             URL url = new URL("http://127.0.0.1:8080/transcribe");
             HttpURLConnection c = (HttpURLConnection) url.openConnection();
             c.setRequestMethod("POST");
@@ -174,9 +182,7 @@ public class WakeWordService extends Service {
             os.write(pcmData);
             os.close();
             int code = c.getResponseCode();
-            if (code != 200) {
-                Log.w("Killua", "server code " + code);
-            }
+            Log.d("Killua", "Response: " + code);
         } catch (Exception e) {
             Log.e("Killua", "send err", e);
         }
