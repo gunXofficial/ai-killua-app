@@ -125,7 +125,7 @@ public class WakeWordService extends Service {
                 }
 
                 audioRecord.startRecording();
-                Log.d("Killua", "Recording started — NO FILTER MODE");
+                Log.d("Killua", "Recording started");
 
                 try {
                     if (AutomaticGainControl.isAvailable()) {
@@ -153,10 +153,11 @@ public class WakeWordService extends Service {
                     offset += read;
 
                     if (offset >= CHUNK_SIZE) {
-                        // TANPA FILTER — langsung kirim
+                        double rms = calcRms(chunk, offset);
                         final byte[] toSend = chunk.clone();
-                        Log.d("Killua", "SEND chunk " + toSend.length + " bytes");
-                        new Thread(() -> sendChunk(toSend)).start();
+                        final int rmsValue = (int) rms;
+                        Log.d("Killua", "SEND RMS=" + rmsValue);
+                        new Thread(() -> sendChunk(toSend, rmsValue)).start();
 
                         offset = 0;
                         chunk = new byte[CHUNK_SIZE];
@@ -174,12 +175,24 @@ public class WakeWordService extends Service {
         recordThread.start();
     }
 
-    private void sendChunk(byte[] pcmData) {
+    private double calcRms(byte[] pcm, int len) {
+        long sum = 0;
+        int count = len / 2;
+        for (int i = 0; i < len - 1; i += 2) {
+            short s = (short) ((pcm[i+1] << 8) | (pcm[i] & 0xFF));
+            sum += (long) s * s;
+        }
+        if (count == 0) return 0;
+        return Math.sqrt(sum / (double) count);
+    }
+
+    private void sendChunk(byte[] pcmData, int rms) {
         try {
             URL url = new URL("http://127.0.0.1:8080/transcribe");
             HttpURLConnection c = (HttpURLConnection) url.openConnection();
             c.setRequestMethod("POST");
             c.setRequestProperty("Content-Type", "application/octet-stream");
+            c.setRequestProperty("X-Audio-RMS", String.valueOf(rms));
             c.setDoOutput(true);
             c.setConnectTimeout(5000);
             c.setReadTimeout(30000);
@@ -207,4 +220,4 @@ public class WakeWordService extends Service {
         }
         if (recordThread != null) recordThread.interrupt();
     }
-                                             }
+                            }
