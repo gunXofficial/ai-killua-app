@@ -26,7 +26,6 @@ public class MainActivity extends Activity {
         super.onCreate(s);
         setContentView(R.layout.activity_main);
 
-        // Minta izin penting
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             boolean needMic = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
                     != PackageManager.PERMISSION_GRANTED;
@@ -41,7 +40,6 @@ public class MainActivity extends Activity {
             }
         }
 
-        // Setup WebView
         FrameLayout root = findViewById(R.id.root);
         webView = new WebView(this);
         webView.setLayoutParams(new FrameLayout.LayoutParams(
@@ -68,16 +66,11 @@ public class MainActivity extends Activity {
         });
 
         webView.addJavascriptInterface(new AndroidBridge(), "Android");
-
         webView.loadUrl("http://127.0.0.1:8080/");
         root.addView(webView);
     }
 
-    // ============================================================
-    // 🌉 JS BRIDGE
-    // ============================================================
     class AndroidBridge {
-
         @JavascriptInterface
         public void startOverlay() {
             runOnUiThread(() -> {
@@ -135,9 +128,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void openDashboard() {
-            runOnUiThread(() -> {
-                webView.loadUrl("http://127.0.0.1:8080/");
-            });
+            runOnUiThread(() -> webView.loadUrl("http://127.0.0.1:8080/"));
         }
 
         @JavascriptInterface
@@ -170,4 +161,4 @@ public class MainActivity extends Activity {
             super.onBackPressed();
         }
     }
-                    }
+        }
