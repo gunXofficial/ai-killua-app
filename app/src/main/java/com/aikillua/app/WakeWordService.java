@@ -22,6 +22,7 @@ public class WakeWordService extends Service {
     private static final int SAMPLE_RATE = 16000;
     private static final int CHUNK_SECONDS = 4;
     private static final int CHUNK_SIZE = SAMPLE_RATE * CHUNK_SECONDS * 2;
+    private static final double RMS_THRESHOLD = 600.0;  // filter suara pelan
 
     private AudioRecord audioRecord;
     private Thread recordThread;
@@ -49,14 +50,14 @@ public class WakeWordService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             notif = new Notification.Builder(this, CHANNEL_ID)
                     .setContentTitle("AI Killua Aktif")
-                    .setContentText("Mendengar terus — ucapkan 'Killua'")
+                    .setContentText("Mendengar terus — bicara bebas")
                     .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                     .setOngoing(true)
                     .build();
         } else {
             notif = new Notification.Builder(this)
                     .setContentTitle("AI Killua Aktif")
-                    .setContentText("Mendengar terus — ucapkan 'Killua'")
+                    .setContentText("Mendengar terus — bicara bebas")
                     .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                     .build();
         }
@@ -109,8 +110,13 @@ public class WakeWordService extends Service {
                     offset += read;
 
                     if (offset >= CHUNK_SIZE) {
-                        final byte[] toSend = chunk.clone();
-                        new Thread(() -> sendChunk(toSend)).start();
+                        // Cek apakah ada suara (bukan cuma noise)
+                        if (hasVoice(chunk, offset)) {
+                            final byte[] toSend = chunk.clone();
+                            new Thread(() -> sendChunk(toSend)).start();
+                        } else {
+                            Log.d("Killua", "Silence, skip");
+                        }
                         offset = 0;
                         chunk = new byte[CHUNK_SIZE];
                     }
@@ -123,6 +129,18 @@ public class WakeWordService extends Service {
             }
         }, "KilluaRecorder");
         recordThread.start();
+    }
+
+    private boolean hasVoice(byte[] pcm, int len) {
+        long sum = 0;
+        int count = len / 2;
+        for (int i = 0; i < len - 1; i += 2) {
+            short s = (short) ((pcm[i+1] << 8) | (pcm[i] & 0xFF));
+            sum += (long) s * s;
+        }
+        if (count == 0) return false;
+        double rms = Math.sqrt(sum / (double) count);
+        return rms > RMS_THRESHOLD;
     }
 
     private void sendChunk(byte[] pcmData) {
@@ -158,4 +176,4 @@ public class WakeWordService extends Service {
         }
         if (recordThread != null) recordThread.interrupt();
     }
-        }
+}
