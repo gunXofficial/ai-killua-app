@@ -28,12 +28,15 @@ public class WakeWordService extends Service {
     private boolean isListening = false;
     private boolean isCapturingCommand = false;
     private long lastTrigger = 0;
+    private long captureStartTime = 0;
 
     private static final String[] WAKE_WORDS = {
         "killua", "hey killua", "halo killua", "hei killua"
     };
 
     private static final String CHANNEL_ID = "killua_wake";
+    private static final int RESTART_DELAY_MS = 50;      // super cepat
+    private static final long CAPTURE_TIMEOUT_MS = 8000; // 8 detik max capture
 
     @Override
     public IBinder onBind(Intent intent) { return null; }
@@ -58,14 +61,15 @@ public class WakeWordService extends Service {
         Notification notif;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             notif = new Notification.Builder(this, CHANNEL_ID)
-                    .setContentTitle("AI Killua")
-                    .setContentText("Mendengar 'Hey Killua'...")
+                    .setContentTitle("AI Killua Aktif")
+                    .setContentText("Mendengar terus — ucapkan 'Hey Killua'")
                     .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                    .setOngoing(true)
                     .build();
         } else {
             notif = new Notification.Builder(this)
-                    .setContentTitle("AI Killua")
-                    .setContentText("Mendengar 'Hey Killua'...")
+                    .setContentTitle("AI Killua Aktif")
+                    .setContentText("Mendengar terus — ucapkan 'Hey Killua'")
                     .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                     .build();
         }
@@ -83,13 +87,8 @@ public class WakeWordService extends Service {
         recognizerIntent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE,
                 getPackageName());
 
-        // Perpanjang durasi dengar — biar tidak cepat stop
-        recognizerIntent.putExtra(
-                RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L);
-        recognizerIntent.putExtra(
-                RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L);
-        recognizerIntent.putExtra(
-                RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1000L);
+        // Mode WAKE: silence pendek (cepat mendeteksi "killua")
+        // Mode CAPTURE: silence panjang (tunggu user selesai ngomong)
 
         recognizer.setRecognitionListener(new RecognitionListener() {
             @Override public void onReadyForSpeech(Bundle params) {}
@@ -101,16 +100,20 @@ public class WakeWordService extends Service {
 
             @Override
             public void onError(int error) {
+                // Error → langsung restart
                 if (isCapturingCommand) {
-                    isCapturingCommand = false;
+                    // Kalau error di mode capture & sudah lewat 1 detik, anggap selesai
+                    if (System.currentTimeMillis() - captureStartTime > 1000) {
+                        isCapturingCommand = false;
+                    }
                 }
-                restartListening(150);
+                restartListening(RESTART_DELAY_MS);
             }
 
             @Override
             public void onResults(Bundle results) {
                 processResults(results, true);
-                restartListening(100);
+                restartListening(RESTART_DELAY_MS);
             }
 
             @Override
@@ -120,33 +123,91 @@ public class WakeWordService extends Service {
         });
     }
 
+    private void applyMode(boolean captureMode) {
+        if (captureMode) {
+            // Mode CAPTURE: tunggu sampai user selesai ngomong (5 detik diam)
+            recognizerIntent.putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L);
+            recognizerIntent.putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L);
+            recognizerIntent.putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 500L);
+        } else {
+            // Mode WAKE: silence pendek, biar cepat detect "killua"
+            recognizerIntent.putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 800L);
+            recognizerIntent.putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 800L);
+            recognizerIntent.putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 500L);
+        }
+    }
+
     private void processResults(Bundle results, boolean isFinal) {
         ArrayList<String> matches = results.getStringArrayList(
                 SpeechRecognizer.RESULTS_RECOGNITION);
-        if (matches == null) return;
+        if (matches == null || matches.isEmpty()) return;
 
-        for (String text : matches) {
-            String lower = text.toLowerCase(Locale.ROOT);
+        String bestText = matches.get(0);
+        String lower = bestText.toLowerCase(Locale.ROOT);
 
-            if (isCapturingCommand) {
-                if (isFinal) {
-                    sendToServer("/start", text);
-                    isCapturingCommand = false;
-                }
+        // ==== MODE CAPTURE ====
+        if (isCapturingCommand) {
+            // Cek timeout total
+            if (System.currentTimeMillis() - captureStartTime > CAPTURE_TIMEOUT_MS) {
+                isCapturingCommand = false;
                 return;
             }
 
-            for (String wake : WAKE_WORDS) {
-                if (lower.contains(wake)) {
-                    long now = System.currentTimeMillis();
-                    if (now - lastTrigger < 2000) return;
-                    lastTrigger = now;
+            if (isFinal) {
+                // Kirim ke server
+                String cleaned = bestText;
 
-                    isCapturingCommand = true;
-                    Log.d("WakeWord", "Wake detected: " + text);
-                    sendToServer("/wake", text);
-                    return;
+                // Buang kata wake word dari awal kalimat (kalau ada)
+                for (String wake : WAKE_WORDS) {
+                    if (cleaned.toLowerCase().startsWith(wake)) {
+                        cleaned = cleaned.substring(wake.length()).trim();
+                        break;
+                    }
                 }
+
+                if (cleaned.length() > 1) {
+                    sendToServer("/voice", cleaned);
+                }
+                isCapturingCommand = false;
+            }
+            return;
+        }
+
+        // ==== MODE WAKE ====
+        for (String wake : WAKE_WORDS) {
+            if (lower.contains(wake)) {
+                long now = System.currentTimeMillis();
+                if (now - lastTrigger < 1500) return;
+                lastTrigger = now;
+
+                Log.d("WakeWord", "Wake: " + bestText);
+
+                // Kalau wake word berdampingan dengan perintah → langsung proses
+                String afterWake = "";
+                int idx = lower.indexOf(wake);
+                if (idx >= 0) {
+                    afterWake = bestText.substring(idx + wake.length()).trim();
+                }
+
+                if (afterWake.length() > 2) {
+                    // User langsung ucapkan perintah: "Hey Killua buka WhatsApp"
+                    sendToServer("/voice", afterWake);
+                } else {
+                    // User hanya ucapkan wake word → masuk mode capture
+                    isCapturingCommand = true;
+                    captureStartTime = System.currentTimeMillis();
+                    applyMode(true);
+
+                    // Bunyi feedback singkat
+                    sendToServer("/wake", bestText);
+                }
+                return;
             }
         }
     }
@@ -177,16 +238,23 @@ public class WakeWordService extends Service {
     private void startListening() {
         if (isListening) return;
         try {
+            // Set mode sesuai state
+            applyMode(isCapturingCommand);
             isListening = true;
             recognizer.startListening(recognizerIntent);
         } catch (Exception e) {
             isListening = false;
-            handler.postDelayed(this::startListening, 1000);
+            handler.postDelayed(this::startListening, 500);
         }
     }
 
     private void restartListening(long delayMs) {
         isListening = false;
+        // Cek: kalau mode capture sudah lewat timeout → balik ke mode wake
+        if (isCapturingCommand
+                && System.currentTimeMillis() - captureStartTime > CAPTURE_TIMEOUT_MS) {
+            isCapturingCommand = false;
+        }
         handler.postDelayed(this::startListening, delayMs);
     }
 
@@ -201,4 +269,4 @@ public class WakeWordService extends Service {
             handler.removeCallbacksAndMessages(null);
         }
     }
-                    }
+                              }
