@@ -26,6 +26,7 @@ public class WakeWordService extends Service {
     private Intent recognizerIntent;
     private Handler handler;
     private boolean isListening = false;
+    private boolean isCapturingCommand = false;  // mode: dengar perintah
     private long lastTrigger = 0;
 
     private static final String[] WAKE_WORDS = {
@@ -92,58 +93,82 @@ public class WakeWordService extends Service {
 
             @Override
             public void onError(int error) {
-                restartListening(800);
-            }
-
-            @Override
-            public void onResults(Bundle results) {
-                processResults(results);
+                // Kalau sedang capture perintah tapi error → balik ke wake mode
+                if (isCapturingCommand) {
+                    isCapturingCommand = false;
+                }
                 restartListening(400);
             }
 
             @Override
+            public void onResults(Bundle results) {
+                processResults(results, true);
+                restartListening(300);
+            }
+
+            @Override
             public void onPartialResults(Bundle partialResults) {
-                processResults(partialResults);
+                processResults(partialResults, false);
             }
         });
     }
 
-    private void processResults(Bundle results) {
+    private void processResults(Bundle results, boolean isFinal) {
         ArrayList<String> matches = results.getStringArrayList(
                 SpeechRecognizer.RESULTS_RECOGNITION);
         if (matches == null) return;
+
         for (String text : matches) {
             String lower = text.toLowerCase(Locale.ROOT);
+
+            if (isCapturingCommand) {
+                // Mode: dengar perintah
+                if (isFinal) {
+                    // Kirim perintah ke server
+                    sendToServer("/start", text);
+                    isCapturingCommand = false;
+                }
+                return;
+            }
+
+            // Mode: cari wake word
             for (String wake : WAKE_WORDS) {
                 if (lower.contains(wake)) {
-                    triggerWakeWord(text);
+                    long now = System.currentTimeMillis();
+                    if (now - lastTrigger < 2000) return;
+                    lastTrigger = now;
+
+                    // Masuk mode capture perintah
+                    isCapturingCommand = true;
+                    Log.d("WakeWord", "Wake detected: " + text);
+
+                    // Bunyi konfirmasi singkat (opsional)
+                    sendToServer("/wake", text);
                     return;
                 }
             }
         }
     }
 
-    private void triggerWakeWord(String heard) {
-        long now = System.currentTimeMillis();
-        if (now - lastTrigger < 3000) return;
-        lastTrigger = now;
-        Log.d("WakeWord", "Triggered: " + heard);
-
+    private void sendToServer(String endpoint, String text) {
+        final String ep = endpoint;
+        final String msg = text;
         new Thread(() -> {
             try {
-                URL url = new URL("http://127.0.0.1:8080/wake");
+                URL url = new URL("http://127.0.0.1:8080" + ep);
                 HttpURLConnection c = (HttpURLConnection) url.openConnection();
                 c.setRequestMethod("POST");
                 c.setRequestProperty("Content-Type", "application/json");
                 c.setDoOutput(true);
                 c.setConnectTimeout(3000);
                 OutputStream os = c.getOutputStream();
-                os.write(("{\"heard\":\"" + heard.replace("\"","\\\"") + "\"}")
+                String key = ep.equals("/wake") ? "heard" : "task";
+                os.write(("{\"" + key + "\":\"" + msg.replace("\"","\\\"") + "\"}")
                         .getBytes("UTF-8"));
                 os.close();
                 c.getResponseCode();
             } catch (Exception e) {
-                Log.e("WakeWord", "trigger error", e);
+                Log.e("WakeWord", "send error", e);
             }
         }).start();
     }
@@ -155,7 +180,7 @@ public class WakeWordService extends Service {
             recognizer.startListening(recognizerIntent);
         } catch (Exception e) {
             isListening = false;
-            handler.postDelayed(this::startListening, 2000);
+            handler.postDelayed(this::startListening, 1000);
         }
     }
 
